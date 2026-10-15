@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Histórico de solicitações de compra</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #050806;
+    --panel: #0c130f;
+    --panel-2: #121c16;
+    --line: #1f2f25;
+    --text: #e4eee8;
+    --muted: #8da496;
+    --green: #2fbf71;
+    --green-deep: #14663a;
+    --green-soft: rgba(47, 191, 113, .12);
+    --warn: #e0b04a;
+    --danger: #e5675f;
+    --radius: 6px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font-family: "IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif; font-size: 15px; line-height: 1.5; min-height: 100vh; }
+  .mono { font-family: "IBM Plex Mono", Consolas, monospace; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+
+  /* Login */
+  .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; background:
+    radial-gradient(900px 500px at 15% 0%, rgba(47,191,113,.10), transparent 60%), var(--bg); }
+  .login { width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 32px 28px; border-top: 3px solid var(--green); }
+  .login h1 { font-size: 22px; margin: 0 0 4px; font-weight: 600; }
+  .login p { margin: 0 0 24px; color: var(--muted); }
+
+  label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+  input[type=text], input[type=password], input[type=search], select {
+    width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 10px 12px; }
+  input::placeholder { color: #567063; }
+  input:focus, select:focus { border-color: var(--green); outline: none; box-shadow: 0 0 0 3px var(--green-soft); }
+
+  .btn { background: var(--green); color: #03140b; border: 0; border-radius: var(--radius); padding: 10px 18px; font-weight: 600; cursor: pointer; }
+  .btn:hover { background: #46d487; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 500; }
+  .btn.ghost:hover { border-color: var(--green); color: var(--green); background: transparent; }
+  .btn.full { width: 100%; margin-top: 22px; }
+  .msg { margin-top: 14px; font-size: 14px; min-height: 20px; }
+  .msg.err { color: var(--danger); }
+  .msg.ok { color: var(--green); }
+
+  /* App */
+  header.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+  .brand { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 17px; }
+  .brand i { width: 12px; height: 12px; background: var(--green); display: inline-block; border-radius: 2px; }
+  nav.tabs { display: flex; gap: 4px; }
+  nav.tabs button { background: transparent; border: 0; padding: 8px 14px; border-radius: var(--radius); color: var(--muted); cursor: pointer; font-weight: 500; }
+  nav.tabs button[aria-selected=true] { background: var(--green-soft); color: var(--green); }
+  nav.tabs button:hover { color: var(--text); }
+  main { max-width: 1280px; margin: 0 auto; padding: 24px; }
+  h2 { font-size: 20px; margin: 0 0 16px; font-weight: 600; }
+
+  .filters { display: grid; grid-template-columns: 1fr 180px 200px auto; gap: 12px; align-items: end; margin-bottom: 14px; }
+  .filters label { margin: 0 0 6px; }
+  .meta { color: var(--muted); font-size: 14px; margin: 6px 0 12px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+
+  .table-box { border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; background: var(--panel); }
+  table { width: 100%; border-collapse: collapse; min-width: 980px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 13px; font-weight: 500; color: var(--muted); background: var(--panel-2); position: sticky; top: 0; white-space: nowrap; }
+  tbody tr:hover { background: rgba(47,191,113,.05); }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num { text-align: right; }
+  td.desc { min-width: 260px; }
+  td.obs { color: var(--muted); min-width: 180px; max-width: 280px; }
+  .sc-link { background: none; border: 0; color: var(--green); cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 3px; }
+  .tag { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12.5px; border: 1px solid var(--green-deep); color: var(--green); background: var(--green-soft); white-space: nowrap; }
+  .tag.hot { border-color: #7a3b36; color: var(--danger); background: rgba(229,103,95,.1); }
+  .tag.mid { border-color: #6b5420; color: var(--warn); background: rgba(224,176,74,.1); }
+  .empty { padding: 48px 20px; text-align: center; color: var(--muted); }
+
+  .pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 16px; color: var(--muted); }
+
+  /* Importar */
+  .drop { border: 1.5px dashed var(--green-deep); border-radius: 10px; padding: 34px 20px; text-align: center; background: var(--panel); }
+  .drop p { margin: 0 0 14px; color: var(--muted); }
+  .drop input[type=file] { display: none; }
+  .check { display: flex; align-items: center; gap: 8px; margin: 16px 0 0; color: var(--muted); font-size: 14px; }
+  .check input { accent-color: var(--green); width: 16px; height: 16px; }
+  .preview { margin-top: 22px; }
+  .summary { display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; }
+  .summary div { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 16px; }
+  .summary b { display: block; font-size: 22px; color: var(--green); font-weight: 600; }
+  .summary span { font-size: 13px; color: var(--muted); }
+  .progress { height: 6px; background: var(--panel-2); border-radius: 99px; overflow: hidden; margin-top: 14px; }
+  .progress > i { display: block; height: 100%; width: 0; background: var(--green); transition: width .2s; }
+
+  .qtd-orig { color: var(--muted); text-decoration: line-through; margin-right: 8px; font-size: 13px; }
+  .qtd-nova { color: var(--warn); font-weight: 600; }
+  .qtd-info { display: block; font-family: "IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif; font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; }
+  .hist-btn { background: none; border: 0; color: var(--warn); cursor: pointer; padding: 0; font: inherit; text-decoration: underline; text-underline-offset: 3px; }
+  tr.hist-row td { background: var(--panel-2); padding: 10px 14px 12px 40px; }
+  .hist-list { margin: 0; padding: 0; list-style: none; font-size: 13.5px; color: var(--muted); }
+  .hist-list li { padding: 2px 0; }
+  .hist-list b { color: var(--text); font-weight: 500; }
+  @media (max-width: 800px) {
+    .filters { grid-template-columns: 1fr 1fr; }
+    .filters > :first-child { grid-column: 1 / -1; }
+    header.top { flex-wrap: wrap; padding: 12px 16px; }
+    main { padding: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-wrap" id="telaLogin" hidden>
+  <form class="login" id="formLogin" autocomplete="on">
+    <h1>Histórico de solicitações de compra</h1>
+    <p>Entre para consultar e importar suas SCs.</p>
+    <label for="usuario">Usuário</label>
+    <input type="text" id="usuario" name="username" autocomplete="username" required>
+    <label for="senha">Senha</label>
+    <input type="password" id="senha" name="password" autocomplete="current-password" required>
+    <button class="btn full" id="btnEntrar" type="submit">Entrar</button>
+    <div class="msg err" id="msgLogin" role="alert"></div>
+  </form>
+</div>
+
+<!-- APP -->
+<div id="telaApp" hidden>
+  <header class="top">
+    <div class="brand"><i></i> Solicitações de compra</div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" id="tabBuscar" aria-selected="true">Consultar</button>
+      <button role="tab" id="tabImportar" aria-selected="false">Importar planilha</button>
+    </nav>
+    <button class="btn ghost" id="btnSair">Sair</button>
+  </header>
+
+  <main>
+    <!-- Consultar -->
+    <section id="viewBuscar">
+      <h2>Consultar itens solicitados</h2>
+      <div class="filters">
+        <div>
+          <label for="busca">Código ou descrição</label>
+          <input type="search" id="busca" placeholder="Ex.: 10234 ou rolamento 6205">
+        </div>
+        <div>
+          <label for="filtroSC">Número da SC</label>
+          <input type="text" id="filtroSC" placeholder="Ex.: 4521">
+        </div>
+        <div>
+          <label for="filtroPrio">Prioridade</label>
+          <select id="filtroPrio"><option value="">Todas</option></select>
+        </div>
+        <button class="btn ghost" id="btnLimpar">Limpar filtros</button>
+      </div>
+      <div class="check" style="margin:0 0 4px"><input type="checkbox" id="soAlteradas"><label for="soAlteradas" style="margin:0">Mostrar só itens com quantidade alterada</label></div>
+      <div class="meta"><span id="contagem"></span><span id="msgBusca" class="msg err" style="margin:0"></span></div>
+      <div class="table-box">
+        <table>
+          <thead>
+            <tr>
+              <th>SC</th><th>Código</th><th>Descrição</th><th class="num" style="text-align:right">Quantidade</th>
+              <th>Prioridade</th><th>Emissão</th><th>Necessidade</th><th>Observação</th>
+            </tr>
+          </thead>
+          <tbody id="corpo"></tbody>
+        </table>
+        <div class="empty" id="vazio" hidden></div>
+      </div>
+      <div class="pager">
+        <button class="btn ghost" id="btnAnt">Anterior</button>
+        <span id="pagInfo"></span>
+        <button class="btn ghost" id="btnProx">Próxima</button>
+      </div>
+    </section>
+
+    <!-- Importar -->
+    <section id="viewImportar" hidden>
+      <h2>Importar planilha de SCs</h2>
+      <div class="drop">
+        <p>Escolha o arquivo .xlsx, .xls ou .csv. Itens novos entram no histórico. Se a quantidade de um item mudou, a alteração é registrada com data e hora e a quantidade original continua guardada.</p>
+        <input type="file" id="arquivo" accept=".xlsx,.xls,.csv">
+        <button class="btn" id="btnEscolher">Escolher arquivo</button>
+        <div class="check"><input type="checkbox" id="temCabecalho" checked><label for="temCabecalho" style="margin:0">A primeira linha da planilha é o cabeçalho</label></div>
+      </div>
+
+      <div class="preview" id="preview" hidden>
+        <div class="summary">
+          <div><b id="sTotal">0</b><span>linhas válidas no arquivo</span></div>
+          <div><b id="sNovos">–</b><span>itens novos</span></div>
+          <div><b id="sAlt">–</b><span>quantidades alteradas</span></div>
+          <div><b id="sIgual">–</b><span>sem mudança</span></div>
+          <div><b id="sIgnoradas">0</b><span>linhas ignoradas (sem SC ou código)</span></div>
+        </div>
+        <div id="blocoAlt" hidden>
+          <h2 style="font-size:16px">Quantidades que serão atualizadas</h2>
+          <div class="table-box">
+            <table style="min-width:640px">
+              <thead><tr><th>SC</th><th>Código</th><th>Descrição</th><th style="text-align:right">Quantidade atual</th><th style="text-align:right">Nova quantidade</th></tr></thead>
+              <tbody id="altCorpo"></tbody>
+            </table>
+          </div>
+          <p class="meta" id="altNota"></p>
+        </div>
+        <h2 style="font-size:16px">Prévia do arquivo</h2>
+        <div class="table-box">
+          <table>
+            <thead><tr><th>SC</th><th>Código</th><th>Descrição</th><th style="text-align:right">Qtd.</th><th>Prioridade</th><th>Emissão</th><th>Necessidade</th></tr></thead>
+            <tbody id="prevCorpo"></tbody>
+          </table>
+        </div>
+        <p class="meta" id="prevNota"></p>
+        <button class="btn" id="btnImportar">Importar para o histórico</button>
+        <div class="progress" id="barra" hidden><i id="barraI"></i></div>
+        <div class="msg" id="msgImport" role="status"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+/* ===== Configuração =====
+   A chave "publishable" é feita para ficar no navegador: quem protege os dados
+   é o login + as regras (RLS) criadas no Supabase. NÃO existe senha neste arquivo. */
+const SUPABASE_URL = "https://xeyetgwuvnsgovslmecw.supabase.co";
+const SUPABASE_KEY = "sb_publishable_X0ZV4Yz5KimdDtngjpUPwQ_Wby77vHS";
+const DOMINIO_LOGIN = "@historico-sc.app";   // o usuário digitado vira usuario@historico-sc.app
+const POR_PAGINA = 50;
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+
+/* ===== Login ===== */
+async function iniciar() {
+  const { data } = await sb.auth.getSession();
+  mostrar(!!data.session);
+}
+function mostrar(logado) {
+  $("telaLogin").hidden = logado;
+  $("telaApp").hidden = !logado;
+  if (logado) { carregarPrioridades(); buscar(true); }
+}
+$("formLogin").addEventListener("submit", async e => {
+  e.preventDefault();
+  const u = $("usuario").value.trim().toLowerCase();
+  const email = u.includes("@") ? u : u + DOMINIO_LOGIN;
+  $("btnEntrar").disabled = true; $("msgLogin").textContent = "";
+  const { error } = await sb.auth.signInWithPassword({ email, password: $("senha").value });
+  $("btnEntrar").disabled = false;
+  $("senha").value = "";
+  if (error) { $("msgLogin").textContent = "Usuário ou senha incorretos."; return; }
+  mostrar(true);
+});
+$("btnSair").addEventListener("click", async () => { await sb.auth.signOut(); mostrar(false); });
+
+/* ===== Abas ===== */
+function aba(nome) {
+  const b = nome === "buscar";
+  $("viewBuscar").hidden = !b; $("viewImportar").hidden = b;
+  $("tabBuscar").setAttribute("aria-selected", b); $("tabImportar").setAttribute("aria-selected", !b);
+  if (b) buscar(true);
+}
+$("tabBuscar").onclick = () => aba("buscar");
+$("tabImportar").onclick = () => aba("importar");
+
+/* ===== Consulta ===== */
+let pagina = 0, total = 0, timer;
+const fmtData = iso => iso ? iso.split("-").reverse().join("/") : "";
+const fmtQtd = n => n == null || n === "" ? "" : Number(n).toLocaleString("pt-BR");
+const fmtDataHora = iso => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleDateString("pt-BR") + " às " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+};
+function celulaQtd(r) {
+  if (!r.alterado_em) return fmtQtd(r.quantidade);
+  const atual = r.quantidade_atual ?? r.quantidade;
+  const botao = `<button class="hist-btn" data-id="${r.id}" data-orig="${r.quantidade ?? ""}">ver histórico</button>`;
+  if (Number(atual) === Number(r.quantidade))
+    return `<span class="qtd-nova">${fmtQtd(atual)}</span><span class="qtd-info">voltou ao original em ${fmtDataHora(r.alterado_em)} · ${botao}</span>`;
+  return `<span class="qtd-orig" title="Quantidade original">${fmtQtd(r.quantidade)}</span><span class="qtd-nova" title="Quantidade atual">${fmtQtd(atual)}</span>`
+       + `<span class="qtd-info">alterada em ${fmtDataHora(r.alterado_em)} · ${botao}</span>`;
+}
+function classePrio(p) {
+  const t = (p || "").toLowerCase();
+  if (/emerg|urgen/.test(t)) return "tag hot";
+  if (t && !/normal/.test(t)) return "tag mid";
+  return "tag";
+}
+async function carregarPrioridades() {
+  const { data } = await sb.from("sc_itens").select("prioridade").not("prioridade", "is", null).limit(1000);
+  const lista = [...new Set((data || []).map(r => r.prioridade))].sort();
+  const atual = $("filtroPrio").value;
+  $("filtroPrio").innerHTML = '<option value="">Todas</option>' + lista.map(p => `<option>${esc(p)}</option>`).join("");
+  $("filtroPrio").value = atual;
+}
+async function buscar(zerar) {
+  if (zerar) pagina = 0;
+  $("msgBusca").textContent = "";
+  let q = sb.from("sc_itens").select("*", { count: "exact" })
+    .order("data_emissao", { ascending: false, nullsFirst: false })
+    .order("numero_sc", { ascending: false })
+    .order("id", { ascending: true })
+    .range(pagina * POR_PAGINA, pagina * POR_PAGINA + POR_PAGINA - 1);
+
+  const termo = $("busca").value.replace(/[,()%*\\]/g, " ").trim();
+  termo.split(/\s+/).filter(Boolean).forEach(w => {
+    q = q.or(`codigo_item.ilike.%${w}%,descricao.ilike.%${w}%`);
+  });
+  const sc = $("filtroSC").value.trim();
+  if (sc) q = q.eq("numero_sc", sc);
+  if ($("filtroPrio").value) q = q.eq("prioridade", $("filtroPrio").value);
+  if ($("soAlteradas").checked) q = q.not("alterado_em", "is", null);
+
+  const { data, count, error } = await q;
+  if (error) { $("msgBusca").textContent = "Não foi possível consultar: " + error.message; return; }
+  total = count || 0;
+  $("corpo").innerHTML = (data || []).map(r => `
+    <tr>
+      <td class="mono"><button class="sc-link" data-sc="${esc(r.numero_sc)}" title="Ver só esta SC">${esc(r.numero_sc)}</button></td>
+      <td class="mono">${esc(r.codigo_item)}</td>
+      <td class="desc">${esc(r.descricao)}</td>
+      <td class="num mono">${celulaQtd(r)}</td>
+      <td>${r.prioridade ? `<span class="${classePrio(r.prioridade)}">${esc(r.prioridade)}</span>` : ""}</td>
+      <td class="mono">${fmtData(r.data_emissao)}</td>
+      <td class="mono">${fmtData(r.data_necessidade)}</td>
+      <td class="obs">${esc(r.observacao)}</td>
+    </tr>`).join("");
+  const vazio = $("vazio");
+  vazio.hidden = total > 0;
+  if (!total) vazio.textContent = (termo || sc || $("filtroPrio").value || $("soAlteradas").checked)
+    ? "Nenhum item encontrado com esses filtros." : "Ainda não há itens. Vá em “Importar planilha” para começar.";
+  const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
+  $("contagem").textContent = `${total.toLocaleString("pt-BR")} ${total === 1 ? "item" : "itens"}`;
+  $("pagInfo").textContent = `Página ${pagina + 1} de ${paginas}`;
+  $("btnAnt").disabled = pagina === 0;
+  $("btnProx").disabled = pagina + 1 >= paginas;
+}
+$("busca").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => buscar(true), 350); });
+$("filtroSC").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => buscar(true), 350); });
+$("filtroPrio").addEventListener("change", () => buscar(true));
+$("soAlteradas").addEventListener("change", () => buscar(true));
+$("btnLimpar").onclick = () => { $("busca").value = ""; $("filtroSC").value = ""; $("filtroPrio").value = ""; $("soAlteradas").checked = false; buscar(true); };
+$("btnAnt").onclick = () => { pagina--; buscar(false); };
+$("btnProx").onclick = () => { pagina++; buscar(false); };
+$("corpo").addEventListener("click", async e => {
+  const b = e.target.closest(".sc-link");
+  if (b) { $("filtroSC").value = b.dataset.sc; buscar(true); return; }
+  const h = e.target.closest(".hist-btn"); if (!h) return;
+  const tr = h.closest("tr"), prox = tr.nextElementSibling;
+  if (prox && prox.classList.contains("hist-row")) { prox.remove(); h.textContent = "ver histórico"; return; }
+  h.textContent = "carregando…";
+  const { data, error } = await sb.from("sc_alteracoes").select("*").eq("item_id", h.dataset.id).order("alterado_em", { ascending: true });
+  h.textContent = "ocultar histórico";
+  const itens = error
+    ? `<li>Não foi possível carregar: ${esc(error.message)}</li>`
+    : `<li>Quantidade original: <b>${fmtQtd(h.dataset.orig)}</b></li>` +
+      (data || []).map(a => `<li>${fmtDataHora(a.alterado_em)}: de <b>${fmtQtd(a.qtd_anterior)}</b> para <b>${fmtQtd(a.qtd_nova)}</b></li>`).join("");
+  const nova = document.createElement("tr");
+  nova.className = "hist-row";
+  nova.innerHTML = `<td colspan="8"><ul class="hist-list">${itens}</ul></td>`;
+  tr.after(nova);
+});
+
+/* ===== Importação ===== */
+let linhas = [], nomeArquivo = "";
+// Colunas da planilha (A=0, B=1, ...)
+const COL = { sc: 1, codigo: 3, descricao: 4, qtd: 8, prioridade: 10, obs: 12, emissao: 15, necessidade: 16 };
+
+$("btnEscolher").onclick = () => $("arquivo").click();
+$("arquivo").addEventListener("change", e => { if (e.target.files[0]) lerArquivo(e.target.files[0]); });
+$("temCabecalho").addEventListener("change", () => { if ($("arquivo").files[0]) lerArquivo($("arquivo").files[0]); });
+
+const texto = v => (v == null ? "" : String(v).trim());
+function paraData(v) {
+  if (v == null || v === "") return null;
+  if (typeof v === "number") {
+    const d = XLSX.SSF.parse_date_code(v);
+    return d ? `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}` : null;
+  }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+function paraNumero(v) {
+  if (v == null || v === "") return null;
+  if (typeof v === "number") return v;
+  const n = parseFloat(String(v).replace(/\./g, "").replace(",", "."));
+  return isNaN(n) ? null : n;
+}
+
+async function lerArquivo(file) {
+  nomeArquivo = file.name;
+  $("msgImport").textContent = ""; $("msgImport").className = "msg";
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const matriz = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+    const dados = $("temCabecalho").checked ? matriz.slice(1) : matriz;
+
+    const contagem = {};
+    let ignoradas = 0;
+    linhas = [];
+    for (const r of dados) {
+      const sc = texto(r[COL.sc]), codigo = texto(r[COL.codigo]);
+      if (!sc || !codigo) { if (r.some(c => c != null && c !== "")) ignoradas++; continue; }
+      const chave = sc + "|" + codigo;
+      contagem[chave] = (contagem[chave] || 0) + 1;
+      linhas.push({
+        numero_sc: sc,
+        codigo_item: codigo,
+        seq: contagem[chave],
+        descricao: texto(r[COL.descricao]) || null,
+        quantidade: paraNumero(r[COL.qtd]),
+        prioridade: texto(r[COL.prioridade]) || null,
+        observacao: texto(r[COL.obs]) || null,
+        data_emissao: paraData(r[COL.emissao]),
+        data_necessidade: paraData(r[COL.necessidade]),
+        arquivo: nomeArquivo
+      });
+    }
+    $("sTotal").textContent = linhas.length.toLocaleString("pt-BR");
+    $("sIgnoradas").textContent = ignoradas;
+    $("prevCorpo").innerHTML = linhas.slice(0, 8).map(r => `
+      <tr><td class="mono">${esc(r.numero_sc)}</td><td class="mono">${esc(r.codigo_item)}</td><td>${esc(r.descricao)}</td>
+      <td class="mono" style="text-align:right">${fmtQtd(r.quantidade)}</td><td>${esc(r.prioridade)}</td>
+      <td class="mono">${fmtData(r.data_emissao)}</td><td class="mono">${fmtData(r.data_necessidade)}</td></tr>`).join("");
+    $("prevNota").textContent = linhas.length
+      ? `Mostrando as primeiras ${Math.min(8, linhas.length)} linhas. Confira se as colunas estão certas antes de importar.`
+      : "Nenhuma linha válida encontrada. Confira se o número da SC está na coluna B e o código do item na coluna D.";
+    $("btnImportar").disabled = !linhas.length;
+    $("barra").hidden = true;
+    $("preview").hidden = false;
+    await calcularDiferencas();
+  } catch (err) {
+    $("msgImport").className = "msg err";
+    $("msgImport").textContent = "Não consegui ler esse arquivo: " + err.message;
+    $("preview").hidden = false; $("btnImportar").disabled = true;
+  }
+}
+
+let novos = [], alteracoes = [];
+
+// Compara o arquivo com o que já está no banco: o que é novo e o que mudou de quantidade
+async function calcularDiferencas() {
+  novos = []; alteracoes = [];
+  $("btnImportar").disabled = true;
+  $("blocoAlt").hidden = true;
+  const ids = ["sNovos", "sAlt", "sIgual"];
+  if (!linhas.length) { ids.forEach(id => $(id).textContent = "0"); return; }
+  ids.forEach(id => $(id).textContent = "…");
+  try {
+    const scs = [...new Set(linhas.map(l => l.numero_sc))];
+    const existentes = new Map();
+    for (let i = 0; i < scs.length; i += 100) {
+      const lote = scs.slice(i, i + 100);
+      for (let de = 0; ; de += 1000) {
+        const { data, error } = await sb.from("sc_itens")
+          .select("id,numero_sc,codigo_item,seq,quantidade,quantidade_atual")
+          .in("numero_sc", lote).order("id").range(de, de + 999);
+        if (error) throw error;
+        data.forEach(r => existentes.set(`${r.numero_sc}|${r.codigo_item}|${r.seq}`, r));
+        if (data.length < 1000) break;
+      }
+    }
+    let iguais = 0;
+    for (const l of linhas) {
+      const ex = existentes.get(`${l.numero_sc}|${l.codigo_item}|${l.seq}`);
+      if (!ex) { novos.push(l); continue; }
+      const atual = ex.quantidade_atual ?? ex.quantidade;
+      if (l.quantidade != null && atual != null && Math.abs(Number(atual) - Number(l.quantidade)) > 1e-9)
+        alteracoes.push({ id: ex.id, sc: l.numero_sc, codigo: l.codigo_item, descricao: l.descricao, de: Number(atual), para: l.quantidade });
+      else iguais++;
+    }
+    $("sNovos").textContent = novos.length.toLocaleString("pt-BR");
+    $("sAlt").textContent = alteracoes.length.toLocaleString("pt-BR");
+    $("sIgual").textContent = iguais.toLocaleString("pt-BR");
+    if (alteracoes.length) {
+      $("altCorpo").innerHTML = alteracoes.slice(0, 100).map(a => `
+        <tr><td class="mono">${esc(a.sc)}</td><td class="mono">${esc(a.codigo)}</td><td>${esc(a.descricao)}</td>
+        <td class="mono" style="text-align:right">${fmtQtd(a.de)}</td>
+        <td class="mono qtd-nova" style="text-align:right">${fmtQtd(a.para)}</td></tr>`).join("");
+      $("altNota").textContent = alteracoes.length > 100 ? `Mostrando 100 de ${alteracoes.length} alterações.` : "";
+      $("blocoAlt").hidden = false;
+    }
+    $("btnImportar").disabled = !(novos.length || alteracoes.length);
+    if (!novos.length && !alteracoes.length && linhas.length) {
+      $("msgImport").className = "msg ok";
+      $("msgImport").textContent = "Nada de novo neste arquivo: tudo já está no histórico com as mesmas quantidades.";
+    }
+  } catch (err) {
+    ids.forEach(id => $(id).textContent = "–");
+    $("msgImport").className = "msg err";
+    $("msgImport").textContent = "Não consegui comparar com o histórico: " + (err.message || err);
+  }
+}
+
+$("btnImportar").addEventListener("click", async () => {
+  const btn = $("btnImportar");
+  btn.disabled = true; $("barra").hidden = false; $("barraI").style.width = "0";
+  $("msgImport").className = "msg"; $("msgImport").textContent = "Importando…";
+  const tarefas = novos.length + alteracoes.length;
+  let feitas = 0, inseridos = 0, atualizados = 0;
+  const avancar = n => { feitas += n; $("barraI").style.width = Math.round(feitas / tarefas * 100) + "%"; };
+  try {
+    // 1) itens novos entram (se algum já existir, é ignorado e nunca sobrescrito)
+    for (let i = 0; i < novos.length; i += 400) {
+      const fatia = novos.slice(i, i + 400);
+      const { data, error } = await sb.from("sc_itens")
+        .upsert(fatia, { onConflict: "numero_sc,codigo_item,seq", ignoreDuplicates: true }).select("id");
+      if (error) throw error;
+      inseridos += (data || []).length; avancar(fatia.length);
+    }
+    // 2) quantidades alteradas: só a "quantidade_atual" muda; o banco registra data/hora e o histórico sozinho
+    for (let i = 0; i < alteracoes.length; i += 10) {
+      const grupo = alteracoes.slice(i, i + 10);
+      const res = await Promise.all(grupo.map(a =>
+        sb.from("sc_itens").update({ quantidade_atual: a.para }).eq("id", a.id).select("id")));
+      for (const r of res) { if (r.error) throw r.error; atualizados += (r.data || []).length; }
+      avancar(grupo.length);
+    }
+    await calcularDiferencas();
+    $("msgImport").className = "msg ok";
+    $("msgImport").textContent = `Pronto. ${inseridos} itens novos e ${atualizados} quantidades alteradas (com data e hora registradas).`;
+    carregarPrioridades();
+  } catch (err) {
+    $("msgImport").className = "msg err";
+    $("msgImport").textContent = "A importação parou: " + (err.message || err) + ". O que já foi enviado está salvo; pode importar o arquivo de novo sem duplicar.";
+    btn.disabled = false;
+  }
+});
+
+iniciar();
+</script>
+</body>
+</html>
