@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Histórico de solicitações de compra</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #050806;
+    --panel: #0c130f;
+    --panel-2: #121c16;
+    --line: #1f2f25;
+    --text: #e4eee8;
+    --muted: #8da496;
+    --green: #2fbf71;
+    --green-deep: #14663a;
+    --green-soft: rgba(47, 191, 113, .12);
+    --warn: #e0b04a;
+    --danger: #e5675f;
+    --radius: 6px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font-family: "IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif; font-size: 15px; line-height: 1.5; min-height: 100vh; }
+  .mono { font-family: "IBM Plex Mono", Consolas, monospace; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+
+  /* Login */
+  .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; background:
+    radial-gradient(900px 500px at 15% 0%, rgba(47,191,113,.10), transparent 60%), var(--bg); }
+  .login { width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 32px 28px; border-top: 3px solid var(--green); }
+  .login h1 { font-size: 22px; margin: 0 0 4px; font-weight: 600; }
+  .login p { margin: 0 0 24px; color: var(--muted); }
+
+  label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+  input[type=text], input[type=password], input[type=search], select {
+    width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 10px 12px; }
+  input::placeholder { color: #567063; }
+  input:focus, select:focus { border-color: var(--green); outline: none; box-shadow: 0 0 0 3px var(--green-soft); }
+
+  .btn { background: var(--green); color: #03140b; border: 0; border-radius: var(--radius); padding: 10px 18px; font-weight: 600; cursor: pointer; }
+  .btn:hover { background: #46d487; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 500; }
+  .btn.ghost:hover { border-color: var(--green); color: var(--green); background: transparent; }
+  .btn.full { width: 100%; margin-top: 22px; }
+  .msg { margin-top: 14px; font-size: 14px; min-height: 20px; }
+  .msg.err { color: var(--danger); }
+  .msg.ok { color: var(--green); }
+
+  /* App */
+  header.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+  .brand { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 17px; }
+  .brand i { width: 12px; height: 12px; background: var(--green); display: inline-block; border-radius: 2px; }
+  nav.tabs { display: flex; gap: 4px; }
+  nav.tabs button { background: transparent; border: 0; padding: 8px 14px; border-radius: var(--radius); color: var(--muted); cursor: pointer; font-weight: 500; }
+  nav.tabs button[aria-selected=true] { background: var(--green-soft); color: var(--green); }
+  nav.tabs button:hover { color: var(--text); }
+  main { max-width: 1280px; margin: 0 auto; padding: 24px; }
+  h2 { font-size: 20px; margin: 0 0 16px; font-weight: 600; }
+
+  .filters { display: grid; grid-template-columns: 1fr 180px 200px auto; gap: 12px; align-items: end; margin-bottom: 14px; }
+  .filters label { margin: 0 0 6px; }
+  .meta { color: var(--muted); font-size: 14px; margin: 6px 0 12px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+
+  .table-box { border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; background: var(--panel); }
+  table { width: 100%; border-collapse: collapse; min-width: 980px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 13px; font-weight: 500; color: var(--muted); background: var(--panel-2); position: sticky; top: 0; white-space: nowrap; }
+  tbody tr:hover { background: rgba(47,191,113,.05); }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num { text-align: right; }
+  td.desc { min-width: 260px; }
+  td.obs { color: var(--muted); min-width: 180px; max-width: 280px; }
+  .sc-link { background: none; border: 0; color: var(--green); cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 3px; }
+  .tag { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12.5px; border: 1px solid var(--green-deep); color: var(--green); background: var(--green-soft); white-space: nowrap; }
+  .tag.hot { border-color: #7a3b36; color: var(--danger); background: rgba(229,103,95,.1); }
+  .tag.mid { border-color: #6b5420; color: var(--warn); background: rgba(224,176,74,.1); }
+  .empty { padding: 48px 20px; text-align: center; color: var(--muted); }
+
+  .pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 16px; color: var(--muted); }
+
+  /* Importar */
+  .drop { border: 1.5px dashed var(--green-deep); border-radius: 10px; padding: 34px 20px; text-align: center; background: var(--panel); }
+  .drop p { margin: 0 0 14px; color: var(--muted); }
+  .drop input[type=file] { display: none; }
+  .check { display: flex; align-items: center; gap: 8px; margin: 16px 0 0; color: var(--muted); font-size: 14px; }
+  .check input { accent-color: var(--green); width: 16px; height: 16px; }
+  .preview { margin-top: 22px; }
+  .summary { display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; }
+  .summary div { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 16px; }
+  .summary b { display: block; font-size: 22px; color: var(--green); font-weight: 600; }
+  .summary span { font-size: 13px; color: var(--muted); }
+  .progress { height: 6px; background: var(--panel-2); border-radius: 99px; overflow: hidden; margin-top: 14px; }
+  .progress > i { display: block; height: 100%; width: 0; background: var(--green); transition: width .2s; }
+
+  @media (max-width: 800px) {
+    .filters { grid-template-columns: 1fr 1fr; }
+    .filters > :first-child { grid-column: 1 / -1; }
+    header.top { flex-wrap: wrap; padding: 12px 16px; }
+    main { padding: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-wrap" id="telaLogin" hidden>
+  <form class="login" id="formLogin" autocomplete="on">
+    <h1>Histórico de solicitações de compra</h1>
+    <p>Entre para consultar e importar suas SCs.</p>
+    <label for="usuario">Usuário</label>
+    <input type="text" id="usuario" name="username" autocomplete="username" required>
+    <label for="senha">Senha</label>
+    <input type="password" id="senha" name="password" autocomplete="current-password" required>
+    <button class="btn full" id="btnEntrar" type="submit">Entrar</button>
+    <div class="msg err" id="msgLogin" role="alert"></div>
+  </form>
+</div>
+
+<!-- APP -->
+<div id="telaApp" hidden>
+  <header class="top">
+    <div class="brand"><i></i> Solicitações de compra</div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" id="tabBuscar" aria-selected="true">Consultar</button>
+      <button role="tab" id="tabImportar" aria-selected="false">Importar planilha</button>
+    </nav>
+    <button class="btn ghost" id="btnSair">Sair</button>
+  </header>
+
+  <main>
+    <!-- Consultar -->
+    <section id="viewBuscar">
+      <h2>Consultar itens solicitados</h2>
+      <div class="filters">
+        <div>
+          <label for="busca">Código ou descrição</label>
+          <input type="search" id="busca" placeholder="Ex.: 10234 ou rolamento 6205">
+        </div>
+        <div>
+          <label for="filtroSC">Número da SC</label>
+          <input type="text" id="filtroSC" placeholder="Ex.: 4521">
+        </div>
+        <div>
+          <label for="filtroPrio">Prioridade</label>
+          <select id="filtroPrio"><option value="">Todas</option></select>
+        </div>
+        <button class="btn ghost" id="btnLimpar">Limpar filtros</button>
+      </div>
+      <div class="meta"><span id="contagem"></span><span id="msgBusca" class="msg err" style="margin:0"></span></div>
+      <div class="table-box">
+        <table>
+          <thead>
+            <tr>
+              <th>SC</th><th>Código</th><th>Descrição</th><th class="num" style="text-align:right">Qtd. solicitada</th>
+              <th>Prioridade</th><th>Emissão</th><th>Necessidade</th><th>Observação</th>
+            </tr>
+          </thead>
+          <tbody id="corpo"></tbody>
+        </table>
+        <div class="empty" id="vazio" hidden></div>
+      </div>
+      <div class="pager">
+        <button class="btn ghost" id="btnAnt">Anterior</button>
+        <span id="pagInfo"></span>
+        <button class="btn ghost" id="btnProx">Próxima</button>
+      </div>
+    </section>
+
+    <!-- Importar -->
+    <section id="viewImportar" hidden>
+      <h2>Importar planilha de SCs</h2>
+      <div class="drop">
+        <p>Escolha o arquivo .xlsx, .xls ou .csv. Itens que já estão no histórico são mantidos como estão, só os novos entram.</p>
+        <input type="file" id="arquivo" accept=".xlsx,.xls,.csv">
+        <button class="btn" id="btnEscolher">Escolher arquivo</button>
+        <div class="check"><input type="checkbox" id="temCabecalho" checked><label for="temCabecalho" style="margin:0">A primeira linha da planilha é o cabeçalho</label></div>
+      </div>
+
+      <div class="preview" id="preview" hidden>
+        <div class="summary">
+          <div><b id="sTotal">0</b><span>linhas válidas</span></div>
+          <div><b id="sIgnoradas">0</b><span>linhas ignoradas (sem SC ou código)</span></div>
+          <div><b id="sNovos">–</b><span>itens novos</span></div>
+          <div><b id="sExistentes">–</b><span>já estavam no histórico</span></div>
+        </div>
+        <div class="table-box">
+          <table>
+            <thead><tr><th>SC</th><th>Código</th><th>Descrição</th><th style="text-align:right">Qtd.</th><th>Prioridade</th><th>Emissão</th><th>Necessidade</th></tr></thead>
+            <tbody id="prevCorpo"></tbody>
+          </table>
+        </div>
+        <p class="meta" id="prevNota"></p>
+        <button class="btn" id="btnImportar">Importar para o histórico</button>
+        <div class="progress" id="barra" hidden><i id="barraI"></i></div>
+        <div class="msg" id="msgImport" role="status"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+/* ===== Configuração =====
+   A chave "publishable" é feita para ficar no navegador: quem protege os dados
+   é o login + as regras (RLS) criadas no Supabase. NÃO existe senha neste arquivo. */
+const SUPABASE_URL = "https://xeyetgwuvnsgovslmecw.supabase.co";
+const SUPABASE_KEY = "sb_publishable_X0ZV4Yz5KimdDtngjpUPwQ_Wby77vHS";
+const DOMINIO_LOGIN = "@historico-sc.app";   // o usuário digitado vira usuario@historico-sc.app
+const POR_PAGINA = 50;
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+
+/* ===== Login ===== */
+async function iniciar() {
+  const { data } = await sb.auth.getSession();
+  mostrar(!!data.session);
+}
+function mostrar(logado) {
+  $("telaLogin").hidden = logado;
+  $("telaApp").hidden = !logado;
+  if (logado) { carregarPrioridades(); buscar(true); }
+}
+$("formLogin").addEventListener("submit", async e => {
+  e.preventDefault();
+  const u = $("usuario").value.trim().toLowerCase();
+  const email = u.includes("@") ? u : u + DOMINIO_LOGIN;
+  $("btnEntrar").disabled = true; $("msgLogin").textContent = "";
+  const { error } = await sb.auth.signInWithPassword({ email, password: $("senha").value });
+  $("btnEntrar").disabled = false;
+  $("senha").value = "";
+  if (error) { $("msgLogin").textContent = "Usuário ou senha incorretos."; return; }
+  mostrar(true);
+});
+$("btnSair").addEventListener("click", async () => { await sb.auth.signOut(); mostrar(false); });
+
+/* ===== Abas ===== */
+function aba(nome) {
+  const b = nome === "buscar";
+  $("viewBuscar").hidden = !b; $("viewImportar").hidden = b;
+  $("tabBuscar").setAttribute("aria-selected", b); $("tabImportar").setAttribute("aria-selected", !b);
+  if (b) buscar(true);
+}
+$("tabBuscar").onclick = () => aba("buscar");
+$("tabImportar").onclick = () => aba("importar");
+
+/* ===== Consulta ===== */
+let pagina = 0, total = 0, timer;
+const fmtData = iso => iso ? iso.split("-").reverse().join("/") : "";
+const fmtQtd = n => n == null ? "" : Number(n).toLocaleString("pt-BR");
+function classePrio(p) {
+  const t = (p || "").toLowerCase();
+  if (/emerg|urgen/.test(t)) return "tag hot";
+  if (t && !/normal/.test(t)) return "tag mid";
+  return "tag";
+}
+async function carregarPrioridades() {
+  const { data } = await sb.from("sc_itens").select("prioridade").not("prioridade", "is", null).limit(1000);
+  const lista = [...new Set((data || []).map(r => r.prioridade))].sort();
+  const atual = $("filtroPrio").value;
+  $("filtroPrio").innerHTML = '<option value="">Todas</option>' + lista.map(p => `<option>${esc(p)}</option>`).join("");
+  $("filtroPrio").value = atual;
+}
+async function buscar(zerar) {
+  if (zerar) pagina = 0;
+  $("msgBusca").textContent = "";
+  let q = sb.from("sc_itens").select("*", { count: "exact" })
+    .order("data_emissao", { ascending: false, nullsFirst: false })
+    .order("numero_sc", { ascending: false })
+    .order("id", { ascending: true })
+    .range(pagina * POR_PAGINA, pagina * POR_PAGINA + POR_PAGINA - 1);
+
+  const termo = $("busca").value.replace(/[,()%*\\]/g, " ").trim();
+  termo.split(/\s+/).filter(Boolean).forEach(w => {
+    q = q.or(`codigo_item.ilike.%${w}%,descricao.ilike.%${w}%`);
+  });
+  const sc = $("filtroSC").value.trim();
+  if (sc) q = q.eq("numero_sc", sc);
+  if ($("filtroPrio").value) q = q.eq("prioridade", $("filtroPrio").value);
+
+  const { data, count, error } = await q;
+  if (error) { $("msgBusca").textContent = "Não foi possível consultar: " + error.message; return; }
+  total = count || 0;
+  $("corpo").innerHTML = (data || []).map(r => `
+    <tr>
+      <td class="mono"><button class="sc-link" data-sc="${esc(r.numero_sc)}" title="Ver só esta SC">${esc(r.numero_sc)}</button></td>
+      <td class="mono">${esc(r.codigo_item)}</td>
+      <td class="desc">${esc(r.descricao)}</td>
+      <td class="num mono">${fmtQtd(r.quantidade)}</td>
+      <td>${r.prioridade ? `<span class="${classePrio(r.prioridade)}">${esc(r.prioridade)}</span>` : ""}</td>
+      <td class="mono">${fmtData(r.data_emissao)}</td>
+      <td class="mono">${fmtData(r.data_necessidade)}</td>
+      <td class="obs">${esc(r.observacao)}</td>
+    </tr>`).join("");
+  const vazio = $("vazio");
+  vazio.hidden = total > 0;
+  if (!total) vazio.textContent = (termo || sc || $("filtroPrio").value)
+    ? "Nenhum item encontrado com esses filtros." : "Ainda não há itens. Vá em “Importar planilha” para começar.";
+  const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
+  $("contagem").textContent = `${total.toLocaleString("pt-BR")} ${total === 1 ? "item" : "itens"}`;
+  $("pagInfo").textContent = `Página ${pagina + 1} de ${paginas}`;
+  $("btnAnt").disabled = pagina === 0;
+  $("btnProx").disabled = pagina + 1 >= paginas;
+}
+$("busca").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => buscar(true), 350); });
+$("filtroSC").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => buscar(true), 350); });
+$("filtroPrio").addEventListener("change", () => buscar(true));
+$("btnLimpar").onclick = () => { $("busca").value = ""; $("filtroSC").value = ""; $("filtroPrio").value = ""; buscar(true); };
+$("btnAnt").onclick = () => { pagina--; buscar(false); };
+$("btnProx").onclick = () => { pagina++; buscar(false); };
+$("corpo").addEventListener("click", e => {
+  const b = e.target.closest(".sc-link"); if (!b) return;
+  $("filtroSC").value = b.dataset.sc; buscar(true);
+});
+
+/* ===== Importação ===== */
+let linhas = [], nomeArquivo = "";
+// Colunas da planilha (A=0, B=1, ...)
+const COL = { sc: 1, codigo: 3, descricao: 4, qtd: 8, prioridade: 10, obs: 12, emissao: 15, necessidade: 16 };
+
+$("btnEscolher").onclick = () => $("arquivo").click();
+$("arquivo").addEventListener("change", e => { if (e.target.files[0]) lerArquivo(e.target.files[0]); });
+$("temCabecalho").addEventListener("change", () => { if ($("arquivo").files[0]) lerArquivo($("arquivo").files[0]); });
+
+const texto = v => (v == null ? "" : String(v).trim());
+function paraData(v) {
+  if (v == null || v === "") return null;
+  if (typeof v === "number") {
+    const d = XLSX.SSF.parse_date_code(v);
+    return d ? `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}` : null;
+  }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+function paraNumero(v) {
+  if (v == null || v === "") return null;
+  if (typeof v === "number") return v;
+  const n = parseFloat(String(v).replace(/\./g, "").replace(",", "."));
+  return isNaN(n) ? null : n;
+}
+
+async function lerArquivo(file) {
+  nomeArquivo = file.name;
+  $("msgImport").textContent = ""; $("msgImport").className = "msg";
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const matriz = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+    const dados = $("temCabecalho").checked ? matriz.slice(1) : matriz;
+
+    const contagem = {};
+    let ignoradas = 0;
+    linhas = [];
+    for (const r of dados) {
+      const sc = texto(r[COL.sc]), codigo = texto(r[COL.codigo]);
+      if (!sc || !codigo) { if (r.some(c => c != null && c !== "")) ignoradas++; continue; }
+      const chave = sc + "|" + codigo;
+      contagem[chave] = (contagem[chave] || 0) + 1;
+      linhas.push({
+        numero_sc: sc,
+        codigo_item: codigo,
+        seq: contagem[chave],
+        descricao: texto(r[COL.descricao]) || null,
+        quantidade: paraNumero(r[COL.qtd]),
+        prioridade: texto(r[COL.prioridade]) || null,
+        observacao: texto(r[COL.obs]) || null,
+        data_emissao: paraData(r[COL.emissao]),
+        data_necessidade: paraData(r[COL.necessidade]),
+        arquivo: nomeArquivo
+      });
+    }
+    $("sTotal").textContent = linhas.length.toLocaleString("pt-BR");
+    $("sIgnoradas").textContent = ignoradas;
+    $("sNovos").textContent = "–"; $("sExistentes").textContent = "–";
+    $("prevCorpo").innerHTML = linhas.slice(0, 8).map(r => `
+      <tr><td class="mono">${esc(r.numero_sc)}</td><td class="mono">${esc(r.codigo_item)}</td><td>${esc(r.descricao)}</td>
+      <td class="mono" style="text-align:right">${fmtQtd(r.quantidade)}</td><td>${esc(r.prioridade)}</td>
+      <td class="mono">${fmtData(r.data_emissao)}</td><td class="mono">${fmtData(r.data_necessidade)}</td></tr>`).join("");
+    $("prevNota").textContent = linhas.length
+      ? `Mostrando as primeiras ${Math.min(8, linhas.length)} linhas. Confira se as colunas estão certas antes de importar.`
+      : "Nenhuma linha válida encontrada. Confira se o número da SC está na coluna B e o código do item na coluna D.";
+    $("btnImportar").disabled = !linhas.length;
+    $("barra").hidden = true;
+    $("preview").hidden = false;
+  } catch (err) {
+    $("msgImport").className = "msg err";
+    $("msgImport").textContent = "Não consegui ler esse arquivo: " + err.message;
+    $("preview").hidden = false; $("btnImportar").disabled = true;
+  }
+}
+
+$("btnImportar").addEventListener("click", async () => {
+  const btn = $("btnImportar");
+  btn.disabled = true; $("barra").hidden = false; $("barraI").style.width = "0";
+  $("msgImport").className = "msg"; $("msgImport").textContent = "Importando…";
+  let novos = 0;
+  const LOTE = 400;
+  try {
+    for (let i = 0; i < linhas.length; i += LOTE) {
+      const fatia = linhas.slice(i, i + LOTE);
+      // ignoreDuplicates: itens que já existem NÃO são alterados (mantém a quantidade original)
+      const { data, error } = await sb.from("sc_itens")
+        .upsert(fatia, { onConflict: "numero_sc,codigo_item,seq", ignoreDuplicates: true })
+        .select("id");
+      if (error) throw error;
+      novos += (data || []).length;
+      $("barraI").style.width = Math.round(Math.min(i + LOTE, linhas.length) / linhas.length * 100) + "%";
+    }
+    $("sNovos").textContent = novos.toLocaleString("pt-BR");
+    $("sExistentes").textContent = (linhas.length - novos).toLocaleString("pt-BR");
+    $("msgImport").className = "msg ok";
+    $("msgImport").textContent = `Pronto. ${novos} itens novos entraram no histórico e ${linhas.length - novos} já existiam e foram mantidos.`;
+    carregarPrioridades();
+  } catch (err) {
+    $("msgImport").className = "msg err";
+    $("msgImport").textContent = "A importação parou: " + (err.message || err) + ". Os itens já enviados ficam salvos; pode importar de novo sem duplicar.";
+  }
+  btn.disabled = false;
+});
+
+iniciar();
+</script>
+</body>
+</html>
